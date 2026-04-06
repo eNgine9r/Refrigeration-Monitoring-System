@@ -1,0 +1,50 @@
+[
+  {
+    "device_name": "Dixell_1",
+    "protocol": "modbus_rtu",
+    "port": "RS485_1",
+    "slave_id": 1,
+    "poll_interval": 5,
+    "timeout_ms": 1000,
+    "retries": 3,
+    "endian": "big",
+    "registers": [
+      {
+        "name": "temp_air_in",
+        "address": 100,
+        "count": 1,
+        "data_type": "int16",
+        "scale": 0.1,
+        "unit": "°C"
+      },
+      {
+        "name": "temp_air_out",
+        "address": 101,
+        "count": 1,
+        "data_type": "int16",
+        "scale": 0.1,
+        "unit": "°C"
+      }
+    ]
+  },
+  {
+    "device_name": "EM23_1",
+    "protocol": "modbus_tcp",
+    "port": "LAN_SEGMENT_A",
+    "slave_id": 10,
+    "poll_interval": 5,
+    "timeout_ms": 1000,
+    "retries": 3,
+    "endian": "big",
+    "registers": [
+      {
+        "name": "active_power_total",
+        "address": 300,
+        "count": 2,
+        "data_type": "float32",
+        "scale": 1.0,
+        "unit": "kW"
+      }
+    ]
+  }
+]

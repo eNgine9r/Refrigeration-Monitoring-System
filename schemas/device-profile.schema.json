@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rms.local/schemas/device-profile.schema.json",
+  "title": "RMS Device Profile",
+  "type": "object",
+  "required": ["device_name", "protocol", "port", "slave_id", "poll_interval", "registers"],
+  "properties": {
+    "device_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "protocol": {
+      "type": "string",
+      "enum": ["modbus_rtu", "modbus_tcp"]
+    },
+    "port": {
+      "type": "string",
+      "minLength": 1
+    },
+    "slave_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 247
+    },
+    "poll_interval": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000,
+      "default": 1000
+    },
+    "retries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 3
+    },
+    "endian": {
+      "type": "string",
+      "enum": ["big", "little"],
+      "default": "big"
+    },
+    "registers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "address", "count", "data_type"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "address": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 125
+          },
+          "data_type": {
+            "type": "string",
+            "enum": ["int16", "uint16", "float32", "bool"]
+          },
+          "scale": {
+            "type": "number",
+            "default": 1.0
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
