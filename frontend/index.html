@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RMS Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+      .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+      h1 { margin: 0 0 10px; }
+      .status { display: flex; gap: 16px; margin-bottom: 16px; }
+      .card { background: #1e293b; border-radius: 8px; padding: 10px 14px; }
+      #chartWrap { background: #1e293b; border-radius: 8px; padding: 14px; }
+      #latest { margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 10px; }
+      .sensor-card { background: #1e293b; border-radius: 8px; padding: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Refrigeration Monitoring System</h1>
+      <div class="status">
+        <div class="card">WebSocket: <span id="wsState">connecting...</span></div>
+        <div class="card">Series: <span id="seriesCount">0</span></div>
+      </div>
+      <div id="chartWrap">
+        <canvas id="liveChart" height="120"></canvas>
+      </div>
+      <div id="latest"></div>
+    </div>
+
+    <script>
+      const maxPoints = 60;
+      const seriesMap = new Map();
+      const latestMap = new Map();
+
+      const colors = ['#38bdf8','#f97316','#22c55e','#eab308','#a855f7','#ef4444','#14b8a6','#f43f5e','#6366f1','#84cc16'];
+      const colorFor = (idx) => colors[idx % colors.length];
+
+      const ctx = document.getElementById('liveChart').getContext('2d');
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true,
+          animation: false,
+          scales: {
+            x: { ticks: { color: '#cbd5e1' } },
+            y: { ticks: { color: '#cbd5e1' } }
+          },
+          plugins: {
+            legend: { labels: { color: '#e2e8f0' } }
+          }
+        }
+      });
+
+      function updateLatest() {
+        const root = document.getElementById('latest');
+        root.innerHTML = '';
+        for (const [key, item] of latestMap.entries()) {
+          const el = document.createElement('div');
+          el.className = 'sensor-card';
+          el.innerHTML = `<strong>${key}</strong><div>${item.value}</div><small>${new Date(item.timestamp).toLocaleTimeString()}</small>`;
+          root.appendChild(el);
+        }
+      }
+
+      function addPoint(msg) {
+        const key = `${msg.device_name}:${msg.sensor_name}`;
+        if (!seriesMap.has(key)) {
+          const ds = {
+            label: key,
+            data: [],
+            borderColor: colorFor(seriesMap.size),
+            tension: 0.2
+          };
+          seriesMap.set(key, ds);
+          chart.data.datasets.push(ds);
+          document.getElementById('seriesCount').textContent = String(seriesMap.size);
+        }
+
+        const label = new Date(msg.timestamp).toLocaleTimeString();
+        chart.data.labels.push(label);
+        for (const ds of chart.data.datasets) {
+          if (ds.label === key) {
+            ds.data.push(msg.value);
+          } else {
+            ds.data.push(null);
+          }
+          if (ds.data.length > maxPoints) ds.data.shift();
+        }
+        if (chart.data.labels.length > maxPoints) chart.data.labels.shift();
+
+        latestMap.set(key, msg);
+        updateLatest();
+        chart.update();
+      }
+
+      async function loadHistory() {
+        const resp = await fetch('http://localhost:8000/data?limit=120');
+        const rows = await resp.json();
+        rows.forEach(addPoint);
+      }
+
+      function connectWs() {
+        const ws = new WebSocket('ws://localhost:8000/ws');
+        ws.onopen = () => { document.getElementById('wsState').textContent = 'connected'; };
+        ws.onclose = () => {
+          document.getElementById('wsState').textContent = 'reconnecting...';
+          setTimeout(connectWs, 1500);
+        };
+        ws.onmessage = (event) => {
+          addPoint(JSON.parse(event.data));
+        };
+        setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+        }, 10000);
+      }
+
+      loadHistory().catch(console.error);
+      connectWs();
+    </script>
+  </body>
+</html>
