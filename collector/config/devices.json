@@ -1,0 +1,40 @@
+{
+  "devices": [
+    {
+      "device_name": "Dixell_A",
+      "protocol": "modbus_rtu",
+      "port": "RS485_1",
+      "slave_id": 1,
+      "poll_interval": 2,
+      "sensors": [
+        {"name": "evap_temp", "base": -18, "noise": 1.2, "min": -30, "max": 10, "unit": "C", "data_type": "float32"},
+        {"name": "air_in_temp", "base": -15, "noise": 1.0, "min": -25, "max": 15, "unit": "C", "data_type": "float32"},
+        {"name": "air_out_temp", "base": -13, "noise": 1.0, "min": -25, "max": 20, "unit": "C", "data_type": "float32"}
+      ]
+    },
+    {
+      "device_name": "Dixell_B",
+      "protocol": "modbus_rtu",
+      "port": "RS485_2",
+      "slave_id": 2,
+      "poll_interval": 3,
+      "sensors": [
+        {"name": "product_temp_1", "base": 2, "noise": 0.8, "min": -5, "max": 12, "unit": "C", "data_type": "float32"},
+        {"name": "product_temp_2", "base": 2.5, "noise": 0.8, "min": -5, "max": 12, "unit": "C", "data_type": "float32"},
+        {"name": "defrost_state", "base": 0, "noise": 1.0, "min": 0, "max": 1, "unit": "bool", "data_type": "bool"}
+      ]
+    },
+    {
+      "device_name": "EM23_1",
+      "protocol": "modbus_tcp",
+      "port": "RS485_3",
+      "slave_id": 3,
+      "poll_interval": 5,
+      "sensors": [
+        {"name": "active_power_kw", "base": 4.2, "noise": 0.5, "min": 0, "max": 20, "unit": "kW", "data_type": "float32"},
+        {"name": "voltage_l1", "base": 230, "noise": 2.0, "min": 210, "max": 245, "unit": "V", "data_type": "float32"},
+        {"name": "current_l1", "base": 9.5, "noise": 1.2, "min": 0, "max": 30, "unit": "A", "data_type": "float32"}
+      ]
+    }
+  ]
+}
