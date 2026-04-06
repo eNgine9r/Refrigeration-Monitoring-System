@@ -43,7 +43,7 @@ from .schemas import (
 SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
 class ConnectionManager:
@@ -82,7 +82,7 @@ def get_db():
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(password[:1024])
 
 
 def verify_password(password: str, hashed: str) -> bool:
@@ -422,6 +422,11 @@ def delete_device(device_id: int, db: Session = Depends(get_db)):
     return {"deleted": True}
 
 
+@app.get("/devices/{device_id}/sensors", response_model=list[SensorOut])
+def get_device_sensors(device_id: int, db: Session = Depends(get_db)):
+    return list(db.scalars(select(Sensor).where(Sensor.device_id == device_id).order_by(Sensor.id)).all())
+
+
 @app.get("/sensors", response_model=list[SensorOut])
 def get_sensors(device_id: int | None = None, db: Session = Depends(get_db)):
     stmt = select(Sensor).order_by(Sensor.id)
@@ -645,6 +650,53 @@ def export_pdf(db: Session = Depends(get_db), hours: int = 1):
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=rms_report.pdf"},
     )
+
+
+
+
+@app.post("/alarms/events/{event_id}/ack")
+def acknowledge_alarm(event_id: int, db: Session = Depends(get_db)):
+    event = db.get(AlarmEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Alarm event not found")
+    if event.status == "ACTIVE":
+        event.status = "ACKED"
+    log_event(db, "alarm_ack", f"Alarm event {event_id} acknowledged")
+    db.commit()
+    return {"acknowledged": True}
+
+
+@app.get("/dashboard/summary")
+def dashboard_summary(db: Session = Depends(get_db)):
+    active_alarms = db.scalar(select(func.count(AlarmEvent.id)).where(AlarmEvent.status == "ACTIVE"))
+    devices_total = db.scalar(select(func.count(Device.id)))
+    sensors_total = db.scalar(select(func.count(Sensor.id)))
+    online_devices = db.scalar(select(func.count(Device.id)).where(Device.status == "ONLINE"))
+    latest_stmt = (
+        select(Sensor.id, Sensor.name, Device.name, Measurement.value, Measurement.timestamp, Measurement.quality)
+        .join(Device, Device.id == Sensor.device_id)
+        .join(Measurement, Measurement.sensor_id == Sensor.id)
+        .order_by(Measurement.timestamp.desc())
+        .limit(20)
+    )
+    latest = [
+        {
+            "sensor_id": r[0],
+            "sensor_name": r[1],
+            "device_name": r[2],
+            "value": r[3],
+            "timestamp": r[4],
+            "quality": r[5],
+        }
+        for r in db.execute(latest_stmt).all()
+    ]
+    return {
+        "active_alarms": active_alarms or 0,
+        "devices_total": devices_total or 0,
+        "sensors_total": sensors_total or 0,
+        "online_devices": online_devices or 0,
+        "latest": latest,
+    }
 
 
 @app.websocket("/ws")

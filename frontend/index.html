@@ -1,196 +1,168 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RMS Control Center</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-    <style>
-      body { margin: 0; font-family: Arial, sans-serif; background:#0b1220; color:#e5e7eb; }
-      header { display:flex; gap:10px; align-items:center; padding:12px; background:#111827; position:sticky; top:0; }
-      button { background:#1f2937; color:#e5e7eb; border:1px solid #374151; border-radius:6px; padding:8px 10px; cursor:pointer; }
-      button.active{ background:#2563eb; }
-      .container{ padding:16px; }
-      .page{ display:none; }
-      .page.active{ display:block; }
-      .panel{ background:#111827; border:1px solid #374151; border-radius:8px; padding:12px; margin-bottom:12px; }
-      table { width:100%; border-collapse:collapse; }
-      th,td { border-bottom:1px solid #374151; text-align:left; padding:8px; font-size:13px; }
-      .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); }
-      .critical{ color:#ef4444; }
-      .high{ color:#f59e0b; }
-      .ok{ color:#22c55e; }
-      select,input{ background:#0f172a; color:#e5e7eb; border:1px solid #374151; border-radius:4px; padding:6px; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <button data-page="dashboard" class="active">Dashboard</button>
-      <button data-page="devices">Devices</button>
-      <button data-page="alarms">Alarms</button>
-      <button data-page="reports">Reports</button>
-      <span style="margin-left:auto">WS: <b id="wsStatus">connecting...</b></span>
-    </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RMS XWEB+ Console</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <style>
+    :root{--bg:#060b16;--panel:#0d162a;--panel2:#111d35;--line:#2a3a5a;--text:#dbe7ff;--muted:#8fa3c8;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--pri:#3b82f6}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 20% 20%, #17294f 0, var(--bg) 45%);color:var(--text);font-family:Inter,system-ui,Arial,sans-serif}
+    header{display:flex;gap:8px;align-items:center;padding:12px 16px;background:rgba(5,10,20,.9);border-bottom:1px solid var(--line);position:sticky;top:0;backdrop-filter: blur(8px);z-index:3}
+    .brand{font-weight:700;margin-right:12px;color:#8dc5ff}
+    button,.btn{background:linear-gradient(180deg,#1b2c4e,#12213f);color:var(--text);border:1px solid #355084;border-radius:10px;padding:8px 12px;cursor:pointer}
+    button.active{outline:2px solid #4d90ff}
+    .container{padding:16px;display:grid;gap:14px}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(0,0,0,.25)}
+    .big{font-size:28px;font-weight:700} .muted{color:var(--muted);font-size:12px}
+    .page{display:none}.page.active{display:block}
+    table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid var(--line);font-size:12px;text-align:left}
+    select,input{background:#091225;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px}
+    .chip{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px}
+    .ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
+    #latestFeed{max-height:260px;overflow:auto}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">RMS XWEB+ Console</div>
+    <button data-page="dashboard" class="active">Dashboard</button>
+    <button data-page="devices">Devices</button>
+    <button data-page="alarms">Alarms</button>
+    <button data-page="reports">Reports</button>
+    <span style="margin-left:auto" class="chip">WS <b id="wsState">connecting</b></span>
+  </header>
 
-    <div class="container">
-      <section id="dashboard" class="page active">
-        <div class="panel">
-          <label>Sensors:</label>
-          <select id="sensorSelect" multiple size="5" style="width:100%"></select>
-          <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-            <label>Range</label>
-            <select id="rangeSelect"><option value="10m">Last 10 min</option><option value="1h">1 hour</option><option value="24h">24 hours</option></select>
-            <button id="reloadBtn">Reload</button>
-            <button id="resetZoom">Reset Zoom</button>
-          </div>
+  <div class="container">
+    <section id="dashboard" class="page active">
+      <div class="grid" id="summaryCards"></div>
+      <div class="card">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <select id="sensorSelect" multiple size="4" style="min-width:320px"></select>
+          <select id="rangeSelect"><option value="10m">10 min</option><option value="1h">1 hour</option><option value="24h">24 hours</option></select>
+          <button id="reloadBtn">Reload data</button>
+          <button id="resetZoom">Reset zoom</button>
         </div>
-        <div class="panel"><canvas id="mainChart" height="110"></canvas></div>
-        <div class="grid" id="latestCards"></div>
-      </section>
+        <canvas id="chart" height="100"></canvas>
+      </div>
+      <div class="grid">
+        <div class="card"><h3 style="margin-top:0">Live telemetry</h3><div id="latestFeed"></div></div>
+        <div class="card"><h3 style="margin-top:0">Quality status</h3><div id="qualityBoard"></div></div>
+      </div>
+    </section>
 
-      <section id="devices" class="page">
-        <div class="panel">
-          <h3>Add Device</h3>
-          <div class="grid">
-            <input id="dName" placeholder="Name"/>
-            <input id="dProtocol" placeholder="Protocol" value="modbus_rtu"/>
-            <input id="dPort" placeholder="Port" value="RS485_1"/>
-            <input id="dSlave" type="number" placeholder="Slave ID" value="1"/>
-            <input id="dPoll" type="number" placeholder="Poll" value="5"/>
-            <button id="createDeviceBtn">Create Device</button>
-          </div>
+    <section id="devices" class="page">
+      <div class="card">
+        <h3 style="margin-top:0">Create device</h3>
+        <div class="grid">
+          <input id="dName" placeholder="name"/><input id="dProtocol" value="modbus_rtu"/><input id="dPort" value="RS485_1"/>
+          <input id="dSlave" type="number" value="1"/><input id="dPoll" type="number" value="5"/><button id="createDevice">Create</button>
         </div>
-        <div class="panel"><table id="devicesTable"></table></div>
-      </section>
+      </div>
+      <div class="card"><table id="devicesTable"></table></div>
+      <div class="card"><h3 style="margin-top:0">Sensors of selected device</h3><select id="devicePicker"></select><table id="deviceSensors"></table></div>
+    </section>
 
-      <section id="alarms" class="page">
-        <div class="panel"><h3>Active Alarms</h3><table id="activeAlarms"></table></div>
-        <div class="panel"><h3>Alarm History</h3><table id="alarmHistory"></table></div>
-      </section>
+    <section id="alarms" class="page">
+      <div class="grid">
+        <div class="card"><h3 style="margin-top:0">Active alarms</h3><table id="activeTable"></table></div>
+        <div class="card"><h3 style="margin-top:0">Alarm history</h3><table id="historyTable"></table></div>
+      </div>
+    </section>
 
-      <section id="reports" class="page">
-        <div class="panel">
-          <button id="downloadCsv">Download CSV</button>
-          <button id="downloadPdf">Download PDF</button>
-        </div>
-        <div class="panel"><h3>Audit Events</h3><table id="eventsTable"></table></div>
-      </section>
-    </div>
+    <section id="reports" class="page">
+      <div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="csvBtn">Export CSV</button><button id="pdfBtn">Export PDF</button>
+      </div>
+      <div class="card"><h3 style="margin-top:0">Audit log</h3><table id="eventsTable"></table></div>
+    </section>
+  </div>
 
-    <script>
-      const API = 'http://localhost:8000';
-      const WS = 'ws://localhost:8000/ws';
-      const colors = ['#22d3ee','#f97316','#22c55e','#a855f7','#eab308','#ef4444','#3b82f6','#10b981','#f43f5e'];
-      const cardCache = new Map();
-      const selectedSensors = new Set();
-      const dsMap = new Map();
-      const chart = new Chart(document.getElementById('mainChart'), {
-        type: 'line',
-        data: { labels: [], datasets: [] },
-        options: { animation:false, scales:{x:{ticks:{color:'#9ca3af'}},y:{ticks:{color:'#9ca3af'}}}, plugins:{zoom:{pan:{enabled:true,mode:'x'}, zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'}}, legend:{labels:{color:'#e5e7eb'}}} }
-      });
+<script>
+const API='http://localhost:8000', WS='ws://localhost:8000/ws';
+const colors=['#38bdf8','#f97316','#22c55e','#a855f7','#eab308','#ef4444','#10b981','#6366f1'];
+const selected=new Set(), dsMap=new Map(), latest=[];
+const chart=new Chart(document.getElementById('chart'),{type:'line',data:{labels:[],datasets:[]},options:{animation:false,interaction:{mode:'nearest'},plugins:{legend:{labels:{color:'#dbe7ff'}},zoom:{pan:{enabled:true,mode:'x'},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'}}},scales:{x:{ticks:{color:'#8fa3c8'}},y:{ticks:{color:'#8fa3c8'}}}}});
 
-      function showPage(id){
-        document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.id===id));
-        document.querySelectorAll('header button[data-page]').forEach(b=>b.classList.toggle('active', b.dataset.page===id));
-      }
-      document.querySelectorAll('header button[data-page]').forEach(btn=>btn.onclick=()=>showPage(btn.dataset.page));
+document.querySelectorAll('button[data-page]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===b.dataset.page));document.querySelectorAll('button[data-page]').forEach(x=>x.classList.toggle('active',x===b));});
 
-      function renderLatest(){
-        const root=document.getElementById('latestCards'); root.innerHTML='';
-        [...cardCache.entries()].slice(-12).forEach(([k,v])=>{
-          const d=document.createElement('div'); d.className='panel';
-          d.innerHTML=`<b>${k}</b><div>${v.value} <small>${v.quality}</small></div><small>${new Date(v.timestamp).toLocaleTimeString()}</small>`;
-          root.appendChild(d);
-        });
-      }
+function addTelemetry(row){
+  const key=String(row.sensor_id); if(selected.size && !selected.has(key)) return;
+  if(!dsMap.has(key)){const ds={label:`S${key}`,data:[],borderColor:colors[dsMap.size%colors.length],tension:.2}; dsMap.set(key,ds); chart.data.datasets.push(ds)}
+  chart.data.labels.push(new Date(row.timestamp).toLocaleTimeString());
+  chart.data.datasets.forEach(ds=>{ ds.data.push(ds.label===`S${key}`?row.value:null); if(ds.data.length>240) ds.data.shift();});
+  if(chart.data.labels.length>240) chart.data.labels.shift();
+  chart.update();
+  latest.unshift(row); if(latest.length>60) latest.pop();
+  drawLive();
+}
+function drawLive(){
+  latestFeed.innerHTML=latest.slice(0,14).map(r=>`<div class='muted'>${new Date(r.timestamp).toLocaleTimeString()} • S${r.sensor_id} = <b>${r.value}</b> <span class='${r.quality==='OK'?'ok':r.quality==='OFFLINE'?'err':'warn'}'>${r.quality}</span></div>`).join('');
+  const q={OK:0,ERROR:0,OFFLINE:0}; latest.forEach(r=>q[r.quality]=(q[r.quality]||0)+1);
+  qualityBoard.innerHTML=`<div class='big ok'>${q.OK||0}</div><div class='muted'>OK samples</div><div class='big warn'>${q.ERROR||0}</div><div class='muted'>ERROR samples</div><div class='big err'>${q.OFFLINE||0}</div><div class='muted'>OFFLINE samples</div>`;
+}
 
-      function addPoint(row){
-        const key = String(row.sensor_id);
-        if (selectedSensors.size && !selectedSensors.has(key)) return;
-        if (!dsMap.has(key)){
-          const ds={label:`Sensor ${key}`, data:[], borderColor:colors[dsMap.size%colors.length], tension:0.2};
-          dsMap.set(key, ds); chart.data.datasets.push(ds);
-        }
-        const label = new Date(row.timestamp).toLocaleTimeString();
-        chart.data.labels.push(label);
-        chart.data.datasets.forEach(ds=>{
-          if (ds.label===`Sensor ${key}`) ds.data.push(row.value); else ds.data.push(null);
-          if (ds.data.length>180) ds.data.shift();
-        });
-        if (chart.data.labels.length>180) chart.data.labels.shift();
-        cardCache.set(`Sensor ${key}`, row);
-        renderLatest();
-        chart.update();
-      }
+async function loadSummary(){
+  const s=await fetch(`${API}/dashboard/summary`).then(r=>r.json());
+  summaryCards.innerHTML=`
+  <div class='card'><div class='big'>${s.devices_total}</div><div class='muted'>Devices</div></div>
+  <div class='card'><div class='big'>${s.online_devices}</div><div class='muted'>Online devices</div></div>
+  <div class='card'><div class='big'>${s.sensors_total}</div><div class='muted'>Sensors</div></div>
+  <div class='card'><div class='big err'>${s.active_alarms}</div><div class='muted'>Active alarms</div></div>`;
+}
+async function loadSensors(){
+  const sensors=await fetch(`${API}/sensors`).then(r=>r.json()); sensorSelect.innerHTML='';
+  sensors.forEach((s,i)=>{const o=document.createElement('option');o.value=String(s.id);o.textContent=`${s.id}: ${s.name} (D${s.device_id})`;sensorSelect.appendChild(o);if(selected.size===0&&i<8)selected.add(String(s.id));});
+  [...sensorSelect.options].forEach(o=>o.selected=selected.has(o.value));
+}
+async function reloadData(){
+  chart.data.labels=[];chart.data.datasets=[];dsMap.clear();
+  const ids=[...selected].join(',');
+  const rows=await fetch(`${API}/data?limit=2400&sensor_ids=${ids}&range=${rangeSelect.value}`).then(r=>r.json());
+  rows.forEach(addTelemetry);
+}
+sensorSelect.onchange=()=>{selected.clear();[...sensorSelect.selectedOptions].forEach(o=>selected.add(o.value));reloadData();}
+reloadBtn.onclick=reloadData; resetZoom.onclick=()=>chart.resetZoom(); rangeSelect.onchange=reloadData;
 
-      async function loadSensors(){
-        const sensors=await fetch(`${API}/sensors`).then(r=>r.json());
-        const sel=document.getElementById('sensorSelect'); sel.innerHTML='';
-        sensors.forEach(s=>{
-          const o=document.createElement('option'); o.value=String(s.id); o.textContent=`${s.id} | Device ${s.device_id} | ${s.name}`; sel.appendChild(o);
-          if (selectedSensors.size===0 && s.id<=6) selectedSensors.add(String(s.id));
-        });
-        [...sel.options].forEach(o=>o.selected=selectedSensors.has(o.value));
-        sel.onchange=()=>{ selectedSensors.clear(); [...sel.selectedOptions].forEach(o=>selectedSensors.add(o.value)); reloadChart(); };
-      }
+async function loadDevices(){
+  const devs=await fetch(`${API}/devices`).then(r=>r.json());
+  devicesTable.innerHTML='<tr><th>ID</th><th>Name</th><th>Protocol</th><th>Port</th><th>Status</th><th>Last seen</th></tr>'+devs.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.protocol}</td><td>${d.port}</td><td>${d.status}</td><td>${d.last_seen||''}</td></tr>`).join('');
+  devicePicker.innerHTML=devs.map(d=>`<option value='${d.id}'>${d.id} - ${d.name}</option>`).join('');
+  if(devs[0]) loadDeviceSensors(devs[0].id);
+}
+async function loadDeviceSensors(id){
+  const rows=await fetch(`${API}/devices/${id}/sensors`).then(r=>r.json());
+  deviceSensors.innerHTML='<tr><th>ID</th><th>Name</th><th>Type</th><th>Unit</th><th>Active</th></tr>'+rows.map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td>${r.data_type}</td><td>${r.unit}</td><td>${r.is_active}</td></tr>`).join('');
+}
+devicePicker.onchange=()=>loadDeviceSensors(devicePicker.value);
+createDevice.onclick=async()=>{await fetch(`${API}/devices`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:dName.value,protocol:dProtocol.value,port:dPort.value,slave_id:+dSlave.value,poll_interval:+dPoll.value})});dName.value='';loadDevices();loadSummary();};
 
-      async function reloadChart(){
-        chart.data.labels=[]; chart.data.datasets=[]; dsMap.clear();
-        const ids=[...selectedSensors].join(',');
-        const range=document.getElementById('rangeSelect').value;
-        const rows=await fetch(`${API}/data?limit=2000&sensor_ids=${ids}&range=${range}`).then(r=>r.json());
-        rows.forEach(addPoint);
-      }
+async function loadAlarms(){
+  const [active,hist]=await Promise.all([fetch(`${API}/alarms/events?active_only=true`).then(r=>r.json()),fetch(`${API}/alarms/events`).then(r=>r.json())]);
+  activeTable.innerHTML='<tr><th>ID</th><th>Sensor</th><th>Message</th><th>Status</th><th>Action</th></tr>'+active.map(a=>`<tr><td>${a.id}</td><td>${a.sensor_id}</td><td>${a.message}</td><td class='err'>${a.status}</td><td><button onclick='ack(${a.id})'>ACK</button></td></tr>`).join('');
+  historyTable.innerHTML='<tr><th>ID</th><th>Sensor</th><th>Status</th><th>Start</th><th>End</th></tr>'+hist.map(a=>`<tr><td>${a.id}</td><td>${a.sensor_id}</td><td>${a.status}</td><td>${a.start_time}</td><td>${a.end_time||''}</td></tr>`).join('');
+}
+window.ack=async(id)=>{await fetch(`${API}/alarms/events/${id}/ack`,{method:'POST'});loadAlarms();loadSummary();}
 
-      async function loadDevices(){
-        const devs=await fetch(`${API}/devices`).then(r=>r.json());
-        document.getElementById('devicesTable').innerHTML='<tr><th>ID</th><th>Name</th><th>Protocol</th><th>Port</th><th>Status</th><th>Last Seen</th></tr>'+devs.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.protocol}</td><td>${d.port}</td><td>${d.status}</td><td>${d.last_seen||''}</td></tr>`).join('');
-      }
+async function loadEvents(){
+  const rows=await fetch(`${API}/events?limit=300`).then(r=>r.json());
+  eventsTable.innerHTML='<tr><th>Time</th><th>Type</th><th>Description</th></tr>'+rows.map(e=>`<tr><td>${e.timestamp}</td><td>${e.type}</td><td>${e.description}</td></tr>`).join('');
+}
 
-      async function loadAlarms(){
-        const active=await fetch(`${API}/alarms/events?active_only=true`).then(r=>r.json());
-        const hist=await fetch(`${API}/alarms/events`).then(r=>r.json());
-        const cls=(s)=>s==='ACTIVE'?'critical':'ok';
-        document.getElementById('activeAlarms').innerHTML='<tr><th>Sensor</th><th>Message</th><th>Status</th><th>Start</th></tr>'+active.map(a=>`<tr><td>${a.sensor_id}</td><td>${a.message}</td><td class="${cls(a.status)}">${a.status}</td><td>${a.start_time}</td></tr>`).join('');
-        document.getElementById('alarmHistory').innerHTML='<tr><th>Sensor</th><th>Message</th><th>Status</th><th>Start</th><th>End</th></tr>'+hist.map(a=>`<tr><td>${a.sensor_id}</td><td>${a.message}</td><td class="${cls(a.status)}">${a.status}</td><td>${a.start_time}</td><td>${a.end_time||''}</td></tr>`).join('');
-      }
+csvBtn.onclick=()=>window.open(`${API}/reports/csv?hours=24`,'_blank');
+pdfBtn.onclick=()=>window.open(`${API}/reports/pdf?hours=24`,'_blank');
 
-      async function loadEvents(){
-        const rows=await fetch(`${API}/events?limit=300`).then(r=>r.json());
-        document.getElementById('eventsTable').innerHTML='<tr><th>Time</th><th>Type</th><th>Description</th></tr>'+rows.map(e=>`<tr><td>${e.timestamp}</td><td>${e.type}</td><td>${e.description}</td></tr>`).join('');
-      }
+function connectWS(){
+  const ws=new WebSocket(WS);
+  ws.onopen=()=>wsState.textContent='connected';
+  ws.onclose=()=>{wsState.textContent='reconnecting';setTimeout(connectWS,1200)};
+  ws.onmessage=ev=>{const msg=JSON.parse(ev.data); if(msg.type==='measurement') addTelemetry(msg); if(msg.type==='alarm'){loadAlarms();loadSummary();} };
+  setInterval(()=>ws.readyState===1&&ws.send('ping'),10000);
+}
 
-      function connectWs(){
-        const ws=new WebSocket(WS);
-        ws.onopen=()=>document.getElementById('wsStatus').textContent='connected';
-        ws.onclose=()=>{document.getElementById('wsStatus').textContent='reconnecting'; setTimeout(connectWs, 1000);};
-        ws.onmessage=(ev)=>{ const msg=JSON.parse(ev.data); if(msg.type==='measurement') addPoint(msg); if(msg.type==='alarm') loadAlarms(); };
-        setInterval(()=>{ if(ws.readyState===1) ws.send('ping'); }, 10000);
-      }
-
-      document.getElementById('reloadBtn').onclick=reloadChart;
-      document.getElementById('rangeSelect').onchange=reloadChart;
-      document.getElementById('resetZoom').onclick=()=>chart.resetZoom();
-      document.getElementById('downloadCsv').onclick=()=>window.open(`${API}/reports/csv?hours=24`, '_blank');
-      document.getElementById('downloadPdf').onclick=()=>window.open(`${API}/reports/pdf?hours=24`, '_blank');
-      document.getElementById('createDeviceBtn').onclick=async()=>{
-        await fetch(`${API}/devices`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:dName.value,protocol:dProtocol.value,port:dPort.value,slave_id:Number(dSlave.value),poll_interval:Number(dPoll.value)})});
-        dName.value='';
-        await loadDevices();
-      };
-
-      async function boot(){
-        await loadSensors();
-        await reloadChart();
-        await loadDevices();
-        await loadAlarms();
-        await loadEvents();
-        connectWs();
-        setInterval(()=>{loadDevices(); loadAlarms();}, 15000);
-      }
-      boot();
-    </script>
-  </body>
+(async function boot(){ await loadSummary(); await loadSensors(); await reloadData(); await loadDevices(); await loadAlarms(); await loadEvents(); connectWS(); setInterval(()=>{loadSummary();loadDevices();loadEvents();},20000); })();
+</script>
+</body>
 </html>
