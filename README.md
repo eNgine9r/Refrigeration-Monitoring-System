@@ -20,7 +20,7 @@ docker compose up --build
 - `db`: TimescaleDB/PostgreSQL
 - `backend`: FastAPI (REST + WebSocket + Alarm Engine + Reports + Auth)
 - `collector`: multi-port simulated collector (Modbus-ready architecture)
-- `frontend`: production static UI через nginx
+- `frontend`: React + Vite SPA (build) через nginx
 - `redis`: pub/sub для команд керування та розширень
 
 ## Структура
@@ -153,3 +153,10 @@ docker compose down
 ```bash
 docker compose down -v
 ```
+
+
+## UI/UX
+- Light/Dark theme toggle (persisted in localStorage)
+- Responsive desktop/mobile layout with bottom nav on mobile
+- Real-time dashboard cards/charts + alarm pulse states
+- Floor plan map page with draggable device markers
