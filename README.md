@@ -21,6 +21,7 @@ docker compose up --build
 - `backend`: FastAPI (REST + WebSocket + Alarm Engine + Reports + Auth)
 - `collector`: multi-port simulated collector (Modbus-ready architecture)
 - `frontend`: production static UI через nginx
+- `redis`: pub/sub для команд керування та розширень
 
 ## Структура
 - `backend/app/main.py` — API, WebSocket, alarm engine, reports, auth
@@ -71,10 +72,18 @@ curl -X POST http://localhost:8000/auth/login \
 - `POST /data`
 - `POST /data/batch`
 - `GET /data?limit=2000&sensor_ids=1,2,3&range=10m|1h|24h`
+- `GET /data/latest`
+- `GET /data/history?device_id=&sensor_id=&from_ts=&to_ts=&agg=raw|1m|5m|1h`
 
 ### Reports
 - `GET /reports/csv?hours=24`
 - `GET /reports/pdf?hours=24`
+
+### Control
+- `POST /control` (Bearer token, roles: admin/operator)
+
+### Backup
+- `GET /backup/export`
 
 ### Audit
 - `GET /events?limit=300`

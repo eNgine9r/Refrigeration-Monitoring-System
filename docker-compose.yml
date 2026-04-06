@@ -13,15 +13,24 @@ services:
       timeout: 3s
       retries: 30
 
+
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
   backend:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg2://rms:rms@db:5432/rms
       JWT_SECRET: rms-super-secret
       DEVICES_CONFIG_PATH: /app/config/devices.json
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "8000:8000"
     volumes:

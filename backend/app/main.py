@@ -9,12 +9,13 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from reportlab.pdfgen import canvas
+import redis
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
@@ -43,6 +44,7 @@ from .schemas import (
 SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
@@ -121,6 +123,24 @@ def require_role(user: User, allowed: set[str]):
 
 def log_event(db: Session, event_type: str, description: str, user_id: int | None = None) -> None:
     db.add(EventLog(type=event_type, description=description, user_id=user_id))
+
+
+def get_actor_from_header(authorization: str | None, db: Session) -> User | None:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        return get_current_user(token, db)
+    except Exception:
+        return None
+
+
+def publish_control_event(payload: dict) -> None:
+    try:
+        client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        client.publish("rms:control", json.dumps(payload))
+    except Exception:
+        pass
 
 
 def resolve_sensor(db: Session, payload: MeasurementIn) -> Sensor:
@@ -696,6 +716,141 @@ def dashboard_summary(db: Session = Depends(get_db)):
         "sensors_total": sensors_total or 0,
         "online_devices": online_devices or 0,
         "latest": latest,
+    }
+
+
+
+
+@app.get("/data/latest")
+def data_latest(device_id: int | None = None, db: Session = Depends(get_db)):
+    stmt = (
+        select(Measurement.id, Measurement.sensor_id, Measurement.value, Measurement.quality, Measurement.timestamp, Sensor.name, Device.id, Device.name)
+        .join(Sensor, Sensor.id == Measurement.sensor_id)
+        .join(Device, Device.id == Sensor.device_id)
+        .order_by(Measurement.timestamp.desc())
+        .limit(5000)
+    )
+    rows = db.execute(stmt).all()
+    latest = {}
+    for row in rows:
+        d_id = row[6]
+        if device_id and d_id != device_id:
+            continue
+        key = row[1]
+        if key not in latest:
+            latest[key] = {
+                "measurement_id": row[0],
+                "sensor_id": row[1],
+                "value": row[2],
+                "quality": row[3],
+                "timestamp": row[4],
+                "sensor_name": row[5],
+                "device_id": row[6],
+                "device_name": row[7],
+            }
+    return list(latest.values())
+
+
+@app.get("/data/history")
+def data_history(
+    device_id: int | None = None,
+    sensor_id: int | None = None,
+    from_ts: datetime | None = None,
+    to_ts: datetime | None = None,
+    agg: str = "raw",
+    db: Session = Depends(get_db),
+):
+    stmt = (
+        select(Measurement.timestamp, Measurement.sensor_id, Measurement.value, Measurement.quality)
+        .join(Sensor, Sensor.id == Measurement.sensor_id)
+        .join(Device, Device.id == Sensor.device_id)
+        .order_by(Measurement.timestamp.asc())
+        .limit(20000)
+    )
+    if device_id:
+        stmt = stmt.where(Device.id == device_id)
+    if sensor_id:
+        stmt = stmt.where(Measurement.sensor_id == sensor_id)
+    if from_ts:
+        stmt = stmt.where(Measurement.timestamp >= from_ts)
+    if to_ts:
+        stmt = stmt.where(Measurement.timestamp <= to_ts)
+    rows = db.execute(stmt).all()
+
+    if agg == "raw":
+        return [{"timestamp": r[0], "sensor_id": r[1], "value": r[2], "quality": r[3]} for r in rows]
+
+    bucket = {"1m": 60, "5m": 300, "1h": 3600}.get(agg, 60)
+    out = {}
+    for ts, sid, val, q in rows:
+        epoch = int(ts.timestamp())
+        group_ts = datetime.fromtimestamp(epoch - (epoch % bucket), tz=UTC)
+        key = (sid, group_ts)
+        out.setdefault(key, []).append(val)
+    return [{"sensor_id": k[0], "timestamp": k[1], "avg_value": sum(v)/len(v)} for k, v in sorted(out.items(), key=lambda x: x[0][1])]
+
+
+@app.post("/alarms/ack")
+def ack_alarm(payload: dict, db: Session = Depends(get_db)):
+    event_id = payload.get("event_id")
+    if not event_id:
+        raise HTTPException(status_code=422, detail="event_id required")
+    event = db.get(AlarmEvent, int(event_id))
+    if not event:
+        raise HTTPException(status_code=404, detail="Alarm event not found")
+    event.status = "ACKED"
+    log_event(db, "alarm_ack", f"Alarm event {event_id} acknowledged")
+    db.commit()
+    return {"acknowledged": True}
+
+
+@app.post("/control")
+def control_device(payload: dict, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    actor = get_actor_from_header(authorization, db)
+    if not actor:
+        raise HTTPException(status_code=401, detail="Authorization required")
+    require_role(actor, {"admin", "operator"})
+
+    device_id = payload.get("device_id")
+    command = payload.get("command")
+    value = payload.get("value")
+    if not device_id or not command:
+        raise HTTPException(status_code=422, detail="device_id and command required")
+
+    event_payload = {
+        "device_id": device_id,
+        "command": command,
+        "value": value,
+        "issued_by": actor.email,
+        "issued_at": datetime.now(UTC).isoformat(),
+    }
+    publish_control_event(event_payload)
+    log_event(db, "control_command", json.dumps(event_payload), actor.id)
+    db.commit()
+    return {"queued": True, **event_payload}
+
+
+@app.get("/users", response_model=list[UserOut])
+def list_users(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    actor = get_actor_from_header(authorization, db)
+    if not actor:
+        raise HTTPException(status_code=401, detail="Authorization required")
+    require_role(actor, {"admin"})
+    return list(db.scalars(select(User).order_by(User.id)).all())
+
+
+@app.get("/backup/export")
+def backup_export(db: Session = Depends(get_db)):
+    devices = db.execute(select(Device.id, Device.name, Device.protocol, Device.port, Device.status)).all()
+    sensors = db.execute(select(Sensor.id, Sensor.device_id, Sensor.name, Sensor.unit, Sensor.data_type)).all()
+    alarms = db.execute(select(Alarm.id, Alarm.sensor_id, Alarm.type, Alarm.severity, Alarm.enabled)).all()
+    measurements = db.execute(select(Measurement.timestamp, Measurement.sensor_id, Measurement.value, Measurement.quality).order_by(Measurement.timestamp.desc()).limit(5000)).all()
+    return {
+        "exported_at": datetime.now(UTC),
+        "devices": [dict(id=r[0], name=r[1], protocol=r[2], port=r[3], status=r[4]) for r in devices],
+        "sensors": [dict(id=r[0], device_id=r[1], name=r[2], unit=r[3], data_type=r[4]) for r in sensors],
+        "alarms": [dict(id=r[0], sensor_id=r[1], type=r[2], severity=r[3], enabled=r[4]) for r in alarms],
+        "measurements": [dict(timestamp=r[0], sensor_id=r[1], value=r[2], quality=r[3]) for r in measurements],
     }
 
 

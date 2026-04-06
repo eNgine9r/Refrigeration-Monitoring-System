@@ -32,6 +32,7 @@
     <button data-page="devices">Devices</button>
     <button data-page="alarms">Alarms</button>
     <button data-page="reports">Reports</button>
+    <button data-page="map">Map</button>
     <span style="margin-left:auto" class="chip">WS <b id="wsState">connecting</b></span>
   </header>
 
@@ -78,6 +79,16 @@
       </div>
       <div class="card"><h3 style="margin-top:0">Audit log</h3><table id="eventsTable"></table></div>
     </section>
+
+
+    <section id="map" class="page">
+      <div class="card">
+        <h3 style="margin-top:0">Floor plan visualization</h3>
+        <input id="mapUpload" type="file" accept="image/*" />
+        <div id="mapCanvas" style="position:relative;margin-top:10px;min-height:420px;border:1px dashed var(--line);border-radius:12px;overflow:hidden"></div>
+      </div>
+    </section>
+
   </div>
 
 <script>
@@ -86,7 +97,8 @@ const colors=['#38bdf8','#f97316','#22c55e','#a855f7','#eab308','#ef4444','#10b9
 const selected=new Set(), dsMap=new Map(), latest=[];
 const chart=new Chart(document.getElementById('chart'),{type:'line',data:{labels:[],datasets:[]},options:{animation:false,interaction:{mode:'nearest'},plugins:{legend:{labels:{color:'#dbe7ff'}},zoom:{pan:{enabled:true,mode:'x'},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'}}},scales:{x:{ticks:{color:'#8fa3c8'}},y:{ticks:{color:'#8fa3c8'}}}}});
 
-document.querySelectorAll('button[data-page]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===b.dataset.page));document.querySelectorAll('button[data-page]').forEach(x=>x.classList.toggle('active',x===b));});
+function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===id));document.querySelectorAll('button[data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===id));}
+document.querySelectorAll('button[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 
 function addTelemetry(row){
   const key=String(row.sensor_id); if(selected.size && !selected.has(key)) return;
@@ -131,6 +143,7 @@ async function loadDevices(){
   devicesTable.innerHTML='<tr><th>ID</th><th>Name</th><th>Protocol</th><th>Port</th><th>Status</th><th>Last seen</th></tr>'+devs.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.protocol}</td><td>${d.port}</td><td>${d.status}</td><td>${d.last_seen||''}</td></tr>`).join('');
   devicePicker.innerHTML=devs.map(d=>`<option value='${d.id}'>${d.id} - ${d.name}</option>`).join('');
   if(devs[0]) loadDeviceSensors(devs[0].id);
+  buildMap(devs);
 }
 async function loadDeviceSensors(id){
   const rows=await fetch(`${API}/devices/${id}/sensors`).then(r=>r.json());
@@ -161,6 +174,27 @@ function connectWS(){
   ws.onmessage=ev=>{const msg=JSON.parse(ev.data); if(msg.type==='measurement') addTelemetry(msg); if(msg.type==='alarm'){loadAlarms();loadSummary();} };
   setInterval(()=>ws.readyState===1&&ws.send('ping'),10000);
 }
+
+
+const markerPos = JSON.parse(localStorage.getItem('rms_marker_pos') || '{}');
+function buildMap(devices){
+  mapCanvas.innerHTML = mapCanvas.querySelector('img') ? mapCanvas.innerHTML : '<div class="muted" style="padding:10px">Upload floor plan image and drag markers</div>';
+  devices.forEach((d,i)=>{
+    let m=document.getElementById('mk-'+d.id);
+    if(!m){
+      m=document.createElement('div');m.id='mk-'+d.id;m.textContent='📍';m.title=d.name;m.style.cssText='position:absolute;left:20px;top:'+((i*24)+20)+'px;cursor:move;font-size:20px;';
+      const lbl=document.createElement('span'); lbl.textContent=' '+d.name; lbl.style.fontSize='11px'; lbl.style.color='#fff'; m.appendChild(lbl);
+      mapCanvas.appendChild(m);
+      let drag=false,ox=0,oy=0;
+      m.onmousedown=(e)=>{drag=true;ox=e.offsetX;oy=e.offsetY;};
+      window.addEventListener('mousemove',(e)=>{if(!drag)return; const r=mapCanvas.getBoundingClientRect(); m.style.left=(e.clientX-r.left-ox)+'px'; m.style.top=(e.clientY-r.top-oy)+'px';});
+      window.addEventListener('mouseup',()=>{if(!drag)return; drag=false; markerPos[d.id]={left:m.style.left,top:m.style.top}; localStorage.setItem('rms_marker_pos', JSON.stringify(markerPos));});
+      m.onclick=()=>showPage('devices');
+    }
+    if(markerPos[d.id]){m.style.left=markerPos[d.id].left;m.style.top=markerPos[d.id].top;}
+  });
+}
+mapUpload.onchange=(e)=>{const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{mapCanvas.innerHTML='';const img=document.createElement('img');img.src=reader.result;img.style.cssText='width:100%;height:100%;object-fit:contain;';mapCanvas.appendChild(img);loadDevices();}; reader.readAsDataURL(file);};
 
 (async function boot(){ await loadSummary(); await loadSensors(); await reloadData(); await loadDevices(); await loadAlarms(); await loadEvents(); connectWS(); setInterval(()=>{loadSummary();loadDevices();loadEvents();},20000); })();
 </script>
