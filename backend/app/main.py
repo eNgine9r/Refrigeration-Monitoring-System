@@ -9,7 +9,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from jose import JWTError, jwt
@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine
-from .models import Alarm, AlarmEvent, Device, EventLog, Measurement, Sensor, User
+from .models import Alarm, AlarmEvent, Device, EventLog, Layout, Measurement, Report, Sensor, SensorPlacement, User
 from .schemas import (
     AlarmCreate,
     AlarmEventOut,
@@ -32,7 +32,12 @@ from .schemas import (
     EventOut,
     LoginInput,
     MeasurementIn,
+    LayoutOut,
     MeasurementOut,
+    PlacementIn,
+    PlacementOut,
+    ReportCreate,
+    ReportOut,
     SensorCreate,
     SensorOut,
     SensorUpdate,
@@ -355,6 +360,7 @@ async def lifespan(_: FastAPI):
             db.rollback()
         sync_devices_from_json(db)
         ensure_default_admin(db)
+    os.makedirs("/app/uploads", exist_ok=True)
     monitor_task = asyncio.create_task(monitor_timeouts())
     yield
     monitor_task.cancel()
@@ -890,6 +896,188 @@ def integrations_status():
         "webhook": bool(os.getenv("ALARM_WEBHOOK_URL")),
         "redis": bool(REDIS_URL),
     }
+
+
+
+
+# -------- API v1 aliases / extended routes --------
+@app.post("/api/auth/login", response_model=TokenOut)
+def api_login(payload: LoginInput, db: Session = Depends(get_db)):
+    return login(payload, db)
+
+
+@app.get("/api/devices", response_model=list[DeviceOut])
+def api_get_devices(status: str | None = None, page: int = 1, limit: int = 100, db: Session = Depends(get_db)):
+    stmt = select(Device).order_by(Device.id)
+    if status:
+        stmt = stmt.where(Device.status == status.upper())
+    rows = list(db.scalars(stmt).all())
+    start = max(0, (page - 1) * limit)
+    return rows[start:start + limit]
+
+
+@app.get("/api/devices/{device_id}", response_model=DeviceOut)
+def api_get_device(device_id: int, db: Session = Depends(get_db)):
+    device = db.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
+
+@app.post("/api/devices", response_model=DeviceOut)
+def api_create_device(payload: DeviceCreate, db: Session = Depends(get_db)):
+    return create_device(payload, db)
+
+
+@app.put("/api/devices/{device_id}", response_model=DeviceOut)
+def api_update_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(get_db)):
+    return update_device(device_id, payload, db)
+
+
+@app.delete("/api/devices/{device_id}")
+def api_delete_device(device_id: int, db: Session = Depends(get_db)):
+    return delete_device(device_id, db)
+
+
+@app.get("/api/sensors", response_model=list[SensorOut])
+def api_get_sensors(device_id: int | None = None, db: Session = Depends(get_db)):
+    return get_sensors(device_id, db)
+
+
+@app.get("/api/sensors/{sensor_id}", response_model=SensorOut)
+def api_get_sensor(sensor_id: int, db: Session = Depends(get_db)):
+    sensor = db.get(Sensor, sensor_id)
+    if not sensor:
+        raise HTTPException(status_code=404, detail="Sensor not found")
+    return sensor
+
+
+@app.post("/api/sensors", response_model=SensorOut)
+def api_create_sensor(payload: SensorCreate, db: Session = Depends(get_db)):
+    return create_sensor(payload, db)
+
+
+@app.put("/api/sensors/{sensor_id}", response_model=SensorOut)
+def api_update_sensor(sensor_id: int, payload: SensorUpdate, db: Session = Depends(get_db)):
+    return update_sensor(sensor_id, payload, db)
+
+
+@app.delete("/api/sensors/{sensor_id}")
+def api_delete_sensor(sensor_id: int, db: Session = Depends(get_db)):
+    return delete_sensor(sensor_id, db)
+
+
+@app.get("/api/sensors/{sensor_id}/data")
+def api_sensor_data(sensor_id: int, start: datetime | None = None, end: datetime | None = None, db: Session = Depends(get_db)):
+    return data_history(sensor_id=sensor_id, from_ts=start, to_ts=end, agg="raw", db=db)
+
+
+@app.get("/api/layouts", response_model=list[LayoutOut])
+def api_layouts(db: Session = Depends(get_db)):
+    return list(db.scalars(select(Layout).order_by(Layout.created_at.desc())).all())
+
+
+@app.get("/api/layouts/{layout_id}", response_model=LayoutOut)
+def api_layout_get(layout_id: str, db: Session = Depends(get_db)):
+    layout = db.get(Layout, layout_id)
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+    return layout
+
+
+@app.post("/api/layouts", response_model=LayoutOut)
+def api_layout_create(name: str, image_file: UploadFile = File(...), db: Session = Depends(get_db)):
+    file_name = f"{datetime.now(UTC).timestamp()}_{image_file.filename}"
+    file_path = f"/app/uploads/{file_name}"
+    with open(file_path, "wb") as f:
+        f.write(image_file.file.read())
+    layout = Layout(name=name, image_url=f"/uploads/{file_name}", scale=1.0)
+    db.add(layout)
+    db.commit()
+    db.refresh(layout)
+    return layout
+
+
+@app.delete("/api/layouts/{layout_id}")
+def api_layout_delete(layout_id: str, db: Session = Depends(get_db)):
+    layout = db.get(Layout, layout_id)
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+    db.delete(layout)
+    db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/layouts/{layout_id}/placements", response_model=list[PlacementOut])
+def api_placements(layout_id: str, db: Session = Depends(get_db)):
+    return list(db.scalars(select(SensorPlacement).where(SensorPlacement.layout_id == layout_id)).all())
+
+
+@app.post("/api/layouts/{layout_id}/placements", response_model=PlacementOut)
+def api_placement_create(layout_id: str, payload: PlacementIn, db: Session = Depends(get_db)):
+    placement = SensorPlacement(layout_id=layout_id, **payload.model_dump())
+    db.add(placement)
+    db.commit()
+    db.refresh(placement)
+    return placement
+
+
+@app.put("/api/layouts/{layout_id}/placements/{placement_id}", response_model=PlacementOut)
+def api_placement_update(layout_id: str, placement_id: str, payload: PlacementIn, db: Session = Depends(get_db)):
+    placement = db.get(SensorPlacement, placement_id)
+    if not placement:
+        raise HTTPException(status_code=404, detail="Placement not found")
+    for k, v in payload.model_dump().items():
+        setattr(placement, k, v)
+    db.commit()
+    db.refresh(placement)
+    return placement
+
+
+@app.delete("/api/layouts/{layout_id}/placements/{placement_id}")
+def api_placement_delete(layout_id: str, placement_id: str, db: Session = Depends(get_db)):
+    placement = db.get(SensorPlacement, placement_id)
+    if not placement:
+        raise HTTPException(status_code=404, detail="Placement not found")
+    db.delete(placement)
+    db.commit()
+    return {"deleted": True}
+
+
+@app.get("/api/alarms")
+def api_alarms(status: str | None = None, db: Session = Depends(get_db)):
+    if status == "active":
+        return alarm_events(active_only=True, db=db)
+    return alarm_events(active_only=False, db=db)
+
+
+@app.post("/api/alarms/{alarm_id}/ack")
+def api_alarm_ack(alarm_id: int, payload: dict, db: Session = Depends(get_db)):
+    return ack_alarm({"event_id": alarm_id}, db)
+
+
+@app.post("/api/alarms/{alarm_id}/resolve")
+def api_alarm_resolve(alarm_id: int, db: Session = Depends(get_db)):
+    return close_alarm(alarm_id, db)
+
+
+@app.get("/api/reports", response_model=list[ReportOut])
+def api_reports(db: Session = Depends(get_db)):
+    return list(db.scalars(select(Report).order_by(Report.created_at.desc())).all())
+
+
+@app.post("/api/reports", response_model=ReportOut, status_code=202)
+def api_report_create(payload: ReportCreate, db: Session = Depends(get_db)):
+    report = Report(type=payload.type, parameters=payload.model_dump_json(), status="ready", file_url=f"/reports/{payload.type.lower()}_{int(datetime.now(UTC).timestamp())}.{payload.format.lower()}")
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+@app.get("/api/users", response_model=list[UserOut])
+def api_users(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    return list_users(authorization, db)
 
 
 @app.websocket("/ws")

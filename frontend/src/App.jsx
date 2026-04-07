@@ -149,6 +149,15 @@ export default function App() {
         </table>
       </div>
     ),
+
+    sensors: (
+      <div className='card'>
+        <h3>Sensors / Points</h3>
+        <table className='table'><thead><tr><th>ID</th><th>Device</th><th>Name</th><th>Type</th><th>Unit</th><th>Offset</th></tr></thead><tbody>
+          {sensors.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.device_id}</td><td>{s.name}</td><td>{s.data_type}</td><td>{s.unit}</td><td>{s.scale}</td></tr>)}
+        </tbody></table>
+      </div>
+    ),
     analytics: (
       <div className='grid-2'>
         <div className='card'>
@@ -197,6 +206,23 @@ export default function App() {
         <div className='card'><h3>Статистика подій</h3><ResponsiveContainer width='100%' height={260}><BarChart data={events.slice(0, 50).map((e, i) => ({ i, v: 1 }))}><CartesianGrid strokeDasharray='3 3' /><XAxis dataKey='i' /><YAxis /><Tooltip /><Bar dataKey='v' fill='#3B82F6' /></BarChart></ResponsiveContainer></div>
       </div>
     ),
+
+    users: (
+      <div className='card'>
+        <h3>Users / Roles</h3>
+        <p>Admin: full access, Operator: control + alarms, Viewer: read-only.</p>
+        <button onClick={() => fetch(`${API}/api/users`, { headers: { Authorization: `Bearer ${localStorage.getItem('rms_token') || ''}` } }).then(r => r.json()).then(d => alert(JSON.stringify(d, null, 2)))}>Завантажити користувачів</button>
+      </div>
+    ),
+    logs: (
+      <div className='card'>
+        <h3>System / User Logs</h3>
+        <div className='row wrap'><label>Фільтр:</label><input placeholder='type contains...' onChange={(e)=>{const q=e.target.value.toLowerCase(); const rows=document.querySelectorAll('.log-row'); rows.forEach(r=>r.style.display=r.dataset.type.includes(q)?'':'none')}} /></div>
+        <table className='table'><thead><tr><th>Time</th><th>Type</th><th>Description</th></tr></thead><tbody>
+        {events.map(e => <tr className='log-row' data-type={String(e.type).toLowerCase()} key={e.id}><td>{String(e.timestamp).slice(0,19)}</td><td>{e.type}</td><td>{e.description}</td></tr>)}
+        </tbody></table>
+      </div>
+    ),
     settings: (
       <div className='card'>
         <h3>Налаштування</h3>
@@ -219,7 +245,7 @@ export default function App() {
           </motion.section>
         </AnimatePresence>
       </main>
-      <nav className='mobile-nav'>{['dashboard','devices','analytics','alarms','map','reports','settings'].map(p => <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}>{p}</button>)}</nav>
+      <nav className='mobile-nav'>{['dashboard','devices','sensors','analytics','alarms','map','reports','users','logs','settings'].map(p => <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}>{p}</button>)}</nav>
     </div>
   )
 }

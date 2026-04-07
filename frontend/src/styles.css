@@ -65,7 +65,7 @@ main { display: flex; flex-direction: column; }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .grid-2 { grid-template-columns: 1fr; }
-  .mobile-nav { position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(7,1fr); background: var(--card); border-top: 1px solid var(--line); padding: 8px; gap: 6px; }
+  .mobile-nav { position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(10,1fr); background: var(--card); border-top: 1px solid var(--line); padding: 8px; gap: 6px; }
   .page-wrap { padding-bottom: 88px; }
 }
 

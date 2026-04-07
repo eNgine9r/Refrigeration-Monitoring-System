@@ -168,3 +168,51 @@ class LoginInput(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class LayoutOut(BaseModel):
+    id: str
+    name: str
+    image_url: str
+    width: int | None = None
+    height: int | None = None
+    scale: float
+
+    class Config:
+        from_attributes = True
+
+
+class PlacementIn(BaseModel):
+    sensor_id: int
+    x: float
+    y: float
+    rotation: float = 0.0
+    z_index: int = 1
+
+
+class PlacementOut(PlacementIn):
+    id: str
+    layout_id: str
+
+    class Config:
+        from_attributes = True
+
+
+class ReportCreate(BaseModel):
+    type: str
+    start: datetime | None = None
+    end: datetime | None = None
+    sensors: list[int] = []
+    format: str = "PDF"
+
+
+class ReportOut(BaseModel):
+    id: str
+    type: str
+    parameters: str
+    file_url: str | None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

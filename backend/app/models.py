@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import (
     Boolean,
     Column,
@@ -103,4 +104,47 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="viewer")
     is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DeviceGroup(Base):
+    __tablename__ = "device_groups"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(120), nullable=False, unique=True)
+
+
+class Layout(Base):
+    __tablename__ = "layouts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False)
+    image_url = Column(Text, nullable=False)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    scale = Column(Float, nullable=False, default=1.0)
+    creator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SensorPlacement(Base):
+    __tablename__ = "sensor_placements"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    layout_id = Column(String(36), ForeignKey("layouts.id", ondelete="CASCADE"), nullable=False, index=True)
+    sensor_id = Column(Integer, ForeignKey("sensors.id", ondelete="CASCADE"), nullable=False, index=True)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    rotation = Column(Float, nullable=False, default=0.0)
+    z_index = Column(Integer, nullable=False, default=1)
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    type = Column(String(60), nullable=False)
+    parameters = Column(Text, nullable=False, default="{}")
+    file_url = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="pending")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
