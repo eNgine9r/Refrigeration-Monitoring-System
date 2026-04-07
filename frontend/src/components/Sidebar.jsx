@@ -1,12 +1,14 @@
-import { LayoutDashboard, Refrigerator, TriangleAlert, FileBarChart2, Map } from 'lucide-react'
+import { LayoutDashboard, Refrigerator, LineChart, TriangleAlert, FileBarChart2, Map, Settings } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 
 const items = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'devices', label: 'Devices', icon: Refrigerator },
+  { id: 'analytics', label: 'Analytics', icon: LineChart },
   { id: 'alarms', label: 'Alarms', icon: TriangleAlert },
+  { id: 'map', label: 'Maps', icon: Map },
   { id: 'reports', label: 'Reports', icon: FileBarChart2 },
-  { id: 'map', label: 'Map', icon: Map }
+  { id: 'settings', label: 'Settings', icon: Settings }
 ]
 
 export default function Sidebar() {

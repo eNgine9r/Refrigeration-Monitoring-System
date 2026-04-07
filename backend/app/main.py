@@ -854,6 +854,44 @@ def backup_export(db: Session = Depends(get_db)):
     }
 
 
+
+
+@app.post("/alarms/events/{event_id}/comment")
+def comment_alarm(event_id: int, payload: dict, db: Session = Depends(get_db)):
+    event = db.get(AlarmEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Alarm event not found")
+    comment = str(payload.get("comment", "")).strip()
+    if not comment:
+        raise HTTPException(status_code=422, detail="comment required")
+    event.message = f"{event.message} | comment: {comment}"
+    log_event(db, "alarm_comment", f"Alarm {event_id} comment added")
+    db.commit()
+    return {"updated": True}
+
+
+@app.post("/alarms/events/{event_id}/close")
+def close_alarm(event_id: int, db: Session = Depends(get_db)):
+    event = db.get(AlarmEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Alarm event not found")
+    event.status = "RESOLVED"
+    event.end_time = datetime.now(UTC)
+    log_event(db, "alarm_closed", f"Alarm {event_id} closed manually")
+    db.commit()
+    return {"closed": True}
+
+
+@app.get("/integrations/status")
+def integrations_status():
+    return {
+        "email": bool(os.getenv("SMTP_HOST")),
+        "telegram": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
+        "webhook": bool(os.getenv("ALARM_WEBHOOK_URL")),
+        "redis": bool(REDIS_URL),
+    }
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
